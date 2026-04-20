@@ -31,6 +31,9 @@
 #include "database.h"
 #include "mysql_client.h"
 
+#define VERSION_STRING SEMVER " @ " GITHUB_SHA
+#define BUILD_TIMESTAMP __DATE__ " " __TIME__
+
 SH_DECL_HOOK3_void(IServerGameDLL, GameFrame, SH_NOATTRIB, 0, bool, bool, bool);
 
 MySQLPlugin g_MySQLPlugin;
@@ -183,12 +186,12 @@ const char *MySQLPlugin::GetLicense()
 
 const char *MySQLPlugin::GetVersion()
 {
-	return "1.0.0.0";
+	return VERSION_STRING;
 }
 
 const char *MySQLPlugin::GetDate()
 {
-	return __DATE__;
+	return BUILD_TIMESTAMP;
 }
 
 const char *MySQLPlugin::GetLogTag()
@@ -208,7 +211,7 @@ const char *MySQLPlugin::GetDescription()
 
 const char *MySQLPlugin::GetName()
 {
-	return "MysqlMM";
+	return "MySQLMM";
 }
 
 const char *MySQLPlugin::GetURL()
