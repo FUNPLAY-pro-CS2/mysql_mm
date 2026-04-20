@@ -34,6 +34,3 @@ mkdir build && cd build
 python3 ../configure.py -s cs2
 ambuild
 ```
-
-> [!IMPORTANT]
-> Linux build requires `libmysqlclient-dev` package to be installed.
