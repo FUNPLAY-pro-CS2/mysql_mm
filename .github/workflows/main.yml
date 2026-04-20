@@ -30,7 +30,7 @@ jobs:
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mysql_mm_es_linux
+          name: mysql_mm_linux
           path: build/package/cs2
 
 
@@ -102,7 +102,7 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mysql_mm_es_windows
+          name: mysql_mm_windows
           path: build/package/cs2
 
 
@@ -119,23 +119,23 @@ jobs:
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          name: mysql_mm_es_linux
+          name: mysql_mm_linux
           path: ./artifacts/linux
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: mysql_mm_es_windows
+          name: mysql_mm_windows
           path: ./artifacts/windows
 
       - name: Create archives
         run: |
           version="${GITHUB_REF#refs/tags/}"
 
-          tar -czf mysql_mm_es_${version}-linux.tar.gz \
+          tar -czf mysql_mm_${version}-linux.tar.gz \
             -C artifacts/linux .
 
-          tar -czf mysql_mm_es_${version}-windows.tar.gz \
+          tar -czf mysql_mm_${version}-windows.tar.gz \
             -C artifacts/windows .
 
 
@@ -143,7 +143,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: mysql_mm_es_*.tar.gz
+          file: mysql_mm_*.tar.gz
           tag: ${{ github.ref }}
           file_glob: true
           release_name: "${{ github.ref_name }}"
