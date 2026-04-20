@@ -13,7 +13,7 @@ jobs:
 
   build-linux:
     name: Build on Linux (clang-18)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
