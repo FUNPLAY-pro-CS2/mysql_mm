@@ -21,6 +21,11 @@ for sdk_target in MMSPlugin.sdk_targets:
     'src/mysql_client.cpp',
   ]
 
+  binary.compiler.cxxincludes += [
+    os.path.join(builder.sourcePath, 'vendor', 'mysql', 'include'),
+    os.path.join(builder.sourcePath, 'vendor', 'openssl', 'include')
+  ]
+
   if binary.compiler.target.platform == 'linux':
     binary.compiler.postlink += [
       os.path.join(builder.sourcePath, 'vendor', 'mysql', 'lib', 'libmysqlclient.a'),
@@ -36,10 +41,6 @@ for sdk_target in MMSPlugin.sdk_targets:
 
   if binary.compiler.target.platform == 'windows':
     binary.compiler.defines += ['WIN32_LEAN_AND_MEAN']
-    binary.compiler.cxxincludes += [
-      os.path.join(builder.sourcePath, 'vendor', 'mysql', 'include'),
-      os.path.join(builder.sourcePath, 'vendor', 'openssl', 'include')
-    ]
     binary.compiler.postlink += [
       os.path.join(builder.sourcePath, 'vendor', 'mysql', 'lib', 'mysqlclient.lib'),
       os.path.join(builder.sourcePath, 'vendor', 'openssl', 'lib', 'windows', 'libssl.lib'),
