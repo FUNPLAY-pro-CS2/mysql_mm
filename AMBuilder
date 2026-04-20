@@ -23,21 +23,30 @@ for sdk_target in MMSPlugin.sdk_targets:
 
   if binary.compiler.target.platform == 'linux':
     binary.compiler.postlink += [
-      '/lib/x86_64-linux-gnu/libmysqlclient.a',
+      os.path.join(builder.sourcePath, 'vendor', 'mysql', 'lib', 'libmysqlclient.a'),
+      os.path.join(builder.sourcePath, 'vendor', 'openssl', 'lib', 'linux', 'libssl.a'),
+      os.path.join(builder.sourcePath, 'vendor', 'openssl', 'lib', 'linux', 'libcrypto.a')
+    ]
+    binary.compiler.linkflags += [
       '-lz',
       '-lpthread',
       '-lm',
+      '-lrt'
     ]
-    binary.compiler.postlink += ['-lrt', '-lssl', '-lcrypto']
 
   if binary.compiler.target.platform == 'windows':
     binary.compiler.defines += ['WIN32_LEAN_AND_MEAN']
     binary.compiler.cxxincludes += [
       os.path.join(builder.sourcePath, 'vendor', 'mysql', 'include'),
+      os.path.join(builder.sourcePath, 'vendor', 'openssl', 'include')
     ]
     binary.compiler.postlink += [
-      'crypt32.lib',
       os.path.join(builder.sourcePath, 'vendor', 'mysql', 'lib', 'mysqlclient.lib'),
+      os.path.join(builder.sourcePath, 'vendor', 'openssl', 'lib', 'windows', 'libssl.lib'),
+      os.path.join(builder.sourcePath, 'vendor', 'openssl', 'lib', 'windows', 'libcrypto.lib')
+    ]
+    binary.compiler.linkflags += [
+      'crypt32.lib'
     ]
 
   binary.custom = [builder.tools.Protoc(protoc = sdk_target.protoc, sources = [
