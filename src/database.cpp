@@ -176,6 +176,46 @@ void MySQLConnection::AddToThreadQueue(ThreadOperation* threadOperation)
     }
 }
 
+bool MySQLConnection::ReconnectSync()
+{
+    if (m_pDatabase)
+    {
+        mysql_close(m_pDatabase);
+        m_pDatabase = nullptr;
+    }
+
+    MYSQL* mysql = mysql_init(NULL);
+    if (!mysql)
+        return false;
+
+    const char* host = NULL, *socket = NULL;
+    int timeout = 60;
+    mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, (const char*)&timeout);
+    mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, (const char*)&timeout);
+    mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, (const char*)&timeout);
+
+    if (m_info.host[0] == '/')
+    {
+        host = "localhost";
+        socket = host;
+    }
+    else
+    {
+        host = m_info.host;
+        socket = NULL;
+    }
+
+    if (!mysql_real_connect(mysql, host, m_info.user, m_info.pass, m_info.database, m_info.port, socket, ((1) << 17)))
+    {
+        mysql_close(mysql);
+        return false;
+    }
+
+    m_pDatabase = mysql;
+    ConMsg("MySQL reconnected to %s\n", m_info.host);
+    return true;
+}
+
 unsigned int MySQLConnection::GetInsertID()
 {
     return mysql_insert_id(m_pDatabase);

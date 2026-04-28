@@ -54,6 +54,7 @@ public:
 	void RunFrame();
     void SetDatabase(MYSQL* db) { m_pDatabase = db; }
     MYSQL* GetDatabase() { return m_pDatabase; }
+    bool ReconnectSync();
     unsigned int GetInsertID();
     unsigned int GetAffectedRows();
     std::string Escape(char* string);

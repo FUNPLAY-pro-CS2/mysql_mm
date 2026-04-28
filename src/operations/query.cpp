@@ -34,6 +34,18 @@ void TQueryOp::RunThreadPart()
 	m_szError[0] = '\0';
 	if (mysql_query(pDatabase, m_szQuery.c_str()))
 	{
+		// CR_SERVER_GONE_ERROR (2006) or CR_SERVER_LOST (2013) — try to reconnect once
+		unsigned int err = mysql_errno(pDatabase);
+		if ((err == CR_SERVER_GONE_ERROR || err == CR_SERVER_LOST) && m_pCon->ReconnectSync())
+		{
+			pDatabase = m_pCon->GetDatabase();
+			if (!mysql_query(pDatabase, m_szQuery.c_str()))
+			{
+				if (mysql_field_count(pDatabase))
+					m_res = mysql_store_result(pDatabase);
+				return;
+			}
+		}
 		V_snprintf(m_szError, sizeof m_szError, "MySQL query error: %s\n", mysql_error(pDatabase));
 		return;
 	}
