@@ -51,11 +51,10 @@ MySQLConnection::~MySQLConnection()
 
     while (!m_ThinkQueue.empty())
     {
-        ThreadOperation* op = m_ThinkQueue.front();
+        auto op = m_ThinkQueue.front();
         m_ThinkQueue.pop();
 
         op->CancelThinkPart();
-        delete op;
     }
 
     if (m_pDatabase)
@@ -109,24 +108,42 @@ void MySQLConnection::Query(const char* query, QueryCallbackFunc callback, ...)
 
 void MySQLConnection::Destroy()
 {
-    g_vecMysqlConnections.erase(std::remove(g_vecMysqlConnections.begin(), g_vecMysqlConnections.end(), this), g_vecMysqlConnections.end());
+    {
+        std::lock_guard<std::mutex> lock(m_Lock);
+        m_Terminate = true;
+        m_QueueEvent.notify_all();
+    }
+
+    if (m_thread && m_thread->joinable())
+        m_thread->join();
+
+    m_thread.reset();
+
+    g_vecMysqlConnections.erase(
+        std::remove(g_vecMysqlConnections.begin(),
+                    g_vecMysqlConnections.end(),
+                    this),
+        g_vecMysqlConnections.end()
+    );
+
     delete this;
 }
 
 void MySQLConnection::RunFrame()
 {
-    if (!m_ThinkQueue.size())
-        return;
+    std::shared_ptr<ThreadOperation> op;
 
-    ThreadOperation* op;
     {
         std::lock_guard<std::mutex> lock(m_ThinkLock);
-        op = m_ThinkQueue.front();
+
+        if (m_ThinkQueue.empty())
+            return;
+
+        op = std::move(m_ThinkQueue.front());
         m_ThinkQueue.pop();
     }
 
     op->RunThinkPart();
-    delete op;
 }
 
 void MySQLConnection::ThreadRun()
@@ -136,18 +153,18 @@ void MySQLConnection::ThreadRun()
 
     std::unique_lock<std::mutex> lock(m_Lock);
 
-    while(true)
+    while (true)
     {
         if (m_threadQueue.empty())
         {
             if (m_Terminate)
-                return;
+                break;
 
             m_QueueEvent.wait(lock);
             continue;
         }
 
-        ThreadOperation* op = m_threadQueue.front();
+        auto op = std::move(m_threadQueue.front());
         m_threadQueue.pop();
 
         lock.unlock();
@@ -166,46 +183,67 @@ void MySQLConnection::ThreadRun()
 
 void MySQLConnection::AddToThreadQueue(ThreadOperation* threadOperation)
 {
-    if(!m_thread)
-	    m_thread = std::unique_ptr<std::thread>(new std::thread(&MySQLConnection::ThreadRun, this));
+    if (!m_thread)
+        m_thread = std::make_unique<std::thread>(&MySQLConnection::ThreadRun, this);
 
     {
         std::lock_guard<std::mutex> lock(m_Lock);
-        m_threadQueue.push(threadOperation);
+
+        m_threadQueue.push(std::shared_ptr<ThreadOperation>(threadOperation));
         m_QueueEvent.notify_one();
     }
 }
 
+MYSQL* MySQLConnection::GetDatabase()
+{
+    std::lock_guard<std::mutex> lock(m_DbLock);
+    return m_pDatabase;
+}
+
 bool MySQLConnection::ReconnectSync()
 {
+    std::lock_guard<std::mutex> lock(m_DbLock);
+
     if (m_pDatabase)
     {
         mysql_close(m_pDatabase);
         m_pDatabase = nullptr;
     }
 
-    MYSQL* mysql = mysql_init(NULL);
+    MYSQL* mysql = mysql_init(nullptr);
     if (!mysql)
         return false;
 
-    const char* host = NULL, *socket = NULL;
+    const char* host = nullptr;
+    const char* socket = nullptr;
+
     int timeout = 60;
     mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, (const char*)&timeout);
     mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, (const char*)&timeout);
     mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, (const char*)&timeout);
 
+    bool my_true = true;
+    mysql_options(mysql, MYSQL_OPT_RECONNECT, (const char*)&my_true); // deprecated
+
     if (m_info.host[0] == '/')
     {
         host = "localhost";
-        socket = host;
+        socket = m_info.host;
     }
     else
     {
         host = m_info.host;
-        socket = NULL;
+        socket = nullptr;
     }
 
-    if (!mysql_real_connect(mysql, host, m_info.user, m_info.pass, m_info.database, m_info.port, socket, ((1) << 17)))
+    if (!mysql_real_connect(mysql,
+        host,
+        m_info.user,
+        m_info.pass,
+        m_info.database,
+        m_info.port,
+        socket,
+        (1 << 17)))
     {
         mysql_close(mysql);
         return false;
@@ -213,6 +251,7 @@ bool MySQLConnection::ReconnectSync()
 
     m_pDatabase = mysql;
     ConMsg("MySQL reconnected to %s\n", m_info.host);
+
     return true;
 }
 

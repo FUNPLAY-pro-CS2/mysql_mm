@@ -81,6 +81,6 @@ void TConnectOp::RunThinkPart()
 
 void TConnectOp::CancelThinkPart()
 {
-	mysql_close(m_pDatabase);
-	m_pCon->SetDatabase(nullptr);
+	// connection ownership belongs to MySQLConnection
+	m_pDatabase = nullptr;
 }

@@ -31,7 +31,8 @@ TQueryOp::~TQueryOp()
 
 void TQueryOp::RunThreadPart()
 {
-	auto pDatabase = m_pCon->GetDatabase();
+	std::lock_guard<std::mutex> lock(m_pCon->m_DbLock);
+	MYSQL* pDatabase = m_pCon->GetDatabase();
 	m_szError[0] = '\0';
 	if (mysql_query(pDatabase, m_szQuery.c_str()))
 	{
@@ -69,6 +70,11 @@ void TQueryOp::RunThinkPart()
 
 void TQueryOp::CancelThinkPart()
 {
-	mysql_close(m_pCon->GetDatabase());
-	m_pCon->SetDatabase(nullptr);
+	if (m_res)
+	{
+		mysql_free_result(m_res);
+		m_res = nullptr;
+	}
+
+	m_pQuery = nullptr;
 }

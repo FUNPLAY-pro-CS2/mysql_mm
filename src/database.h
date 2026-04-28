@@ -53,7 +53,7 @@ public:
     void Destroy();
 	void RunFrame();
     void SetDatabase(MYSQL* db) { m_pDatabase = db; }
-    MYSQL* GetDatabase() { return m_pDatabase; }
+    MYSQL* GetDatabase();
     bool ReconnectSync();
     unsigned int GetInsertID();
     unsigned int GetAffectedRows();
@@ -61,12 +61,13 @@ public:
     std::string Escape(const char* string);
 
     MySQLConnectionInfo m_info;
+    std::mutex m_DbLock;
 private:
     void ThreadRun();
     void AddToThreadQueue(ThreadOperation* threadOperation);
 
-    std::queue<ThreadOperation*> m_threadQueue;
-	std::queue<ThreadOperation*> m_ThinkQueue;
+    std::queue<std::shared_ptr<ThreadOperation>> m_threadQueue;
+    std::queue<std::shared_ptr<ThreadOperation>> m_ThinkQueue;
     std::unique_ptr<std::thread> m_thread;
     std::condition_variable m_QueueEvent;
     std::mutex m_Lock;
