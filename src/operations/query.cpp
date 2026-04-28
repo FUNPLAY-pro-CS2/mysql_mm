@@ -22,6 +22,7 @@
 #include "query.h"
 #include "tier0/dbg.h"
 #include "../mysql_result.h"
+#include <errmsg.h>
 
 TQueryOp::~TQueryOp()
 {
