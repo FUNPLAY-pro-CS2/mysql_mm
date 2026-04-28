@@ -46,7 +46,7 @@ void SamplePlugin::AllPluginsLoaded()
 {
 	
 	int ret;
-	g_pMysqlClient = (IMySQLClient*)g_SMAPI->MetaFactory(MYSQLMM_INTERFACE, &ret, NULL);
+	g_pMysqlClient = (IMySQLClient*)g_SMAPI->MetaFactory(MYMYSQLMM_INTERFACE, &ret, NULL);
 
 	if (ret == META_IFACE_FAILED)
 	{

@@ -2,6 +2,8 @@
  * =============================================================================
  * CS2Fixes
  * Copyright (C) 2023 Source2ZE
+ * Original code from SourceMod
+ * Copyright (C) 2004-2014 AlliedModders LLC
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -17,16 +19,26 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "mysql_client.h"
-#include "database.h"
-#include "tier0/dbg.h"
+#pragma once
+#include "../mysql_database.h"
+#include "../mysql_result.h"
 
-extern std::vector<MySQLConnection*> g_vecMysqlConnections;
-
-IMySQLConnection* CMySQLClient::CreateMySQLConnection(MySQLConnectionInfo info)
+class TMySQLQueryOp : public ThreadOperation
 {
-	auto connection = new MySQLConnection(info);
-	g_vecMysqlConnections.push_back(connection);
+public:
+    TMySQLQueryOp(MySQLConnection *con, std::string query, QueryCallbackFunc func) : m_pCon(con), m_szQuery(query), m_callback(func) {}
 
-	return connection;
-}
+    ~TMySQLQueryOp();
+
+    void RunThreadPart();
+    void CancelThinkPart();
+    void RunThinkPart();
+
+private:
+    MySQLConnection *m_pCon;
+    std::string m_szQuery;
+    QueryCallbackFunc m_callback;
+    MYSQL_RES *m_res = nullptr;
+    CMySQLQuery *m_pQuery = nullptr;
+    char m_szError[255] {};
+};

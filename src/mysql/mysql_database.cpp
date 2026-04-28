@@ -19,14 +19,15 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "database.h"
+#include "mysql_database.h"
 #include "tier0/dbg.h"
 
-#include "operations/connect.h"
-#include "operations/query.h"
+#include "operations/mysql_connect.h"
+#include "operations/mysql_query.h"
+#include "operations/mysql_transact.h"
 #include <cstdarg>
 
-extern std::vector<MySQLConnection*> g_vecMysqlConnections;
+extern std::vector<MySQLConnection *> g_vecMysqlConnections;
 
 MySQLConnection::MySQLConnection(const MySQLConnectionInfo info)
 {
@@ -36,39 +37,42 @@ MySQLConnection::MySQLConnection(const MySQLConnectionInfo info)
 MySQLConnection::~MySQLConnection()
 {
     ConMsg("Destroying MySQL connection %s\n", m_info.database);
-	if (m_thread)
-	{
+    if (m_thread)
+    {
         {
             std::lock_guard<std::mutex> lock(m_Lock);
             m_Terminate = true;
             m_QueueEvent.notify_all();
         }
 
-		m_thread->join();
-		m_thread.reset();
+        m_thread->join();
+        m_thread.reset();
         m_Terminate = false;
-	}
+    }
 
     while (!m_ThinkQueue.empty())
     {
-        auto op = m_ThinkQueue.front();
+        ThreadOperation *op = m_ThinkQueue.front();
         m_ThinkQueue.pop();
 
         op->CancelThinkPart();
+        delete op;
     }
 
     if (m_pDatabase)
+    {
         mysql_close(m_pDatabase);
+    }
 }
 
 void MySQLConnection::Connect(ConnectCallbackFunc callback)
 {
-    TConnectOp* op = new TConnectOp(this, callback);
+    TMySQLConnectOp *op = new TMySQLConnectOp(this, callback);
 
     AddToThreadQueue(op);
 }
 
-void MySQLConnection::Query(char* query, QueryCallbackFunc callback)
+void MySQLConnection::Query(char *query, QueryCallbackFunc callback)
 {
     if (!m_pDatabase)
     {
@@ -76,12 +80,12 @@ void MySQLConnection::Query(char* query, QueryCallbackFunc callback)
         return;
     }
 
-    TQueryOp* op = new TQueryOp(this, std::string(query), callback);
+    TMySQLQueryOp *op = new TMySQLQueryOp(this, std::string(query), callback);
 
     AddToThreadQueue(op);
 }
 
-void MySQLConnection::Query(const char* query, QueryCallbackFunc callback, ...)
+void MySQLConnection::Query(const char *query, QueryCallbackFunc callback, ...)
 {
     va_list args;
     va_start(args, callback);
@@ -101,55 +105,47 @@ void MySQLConnection::Query(const char* query, QueryCallbackFunc callback, ...)
         return;
     }
 
-    TQueryOp* op = new TQueryOp(this, std::string(zc.data(), zc.size()), callback);
+    TMySQLQueryOp *op = new TMySQLQueryOp(this, std::string(zc.data(), zc.size()), callback);
 
+    AddToThreadQueue(op);
+}
+
+void MySQLConnection::ExecuteTransaction(Transaction txn, TransactionSuccessCallbackFunc success, TransactionFailureCallbackFunc failure)
+{
+    TMySQLTransactOp *op = new TMySQLTransactOp(this, txn, success, failure);
     AddToThreadQueue(op);
 }
 
 void MySQLConnection::Destroy()
 {
-    {
-        std::lock_guard<std::mutex> lock(m_Lock);
-        m_Terminate = true;
-        m_QueueEvent.notify_all();
-    }
-
-    if (m_thread && m_thread->joinable())
-        m_thread->join();
-
-    m_thread.reset();
-
-    g_vecMysqlConnections.erase(
-        std::remove(g_vecMysqlConnections.begin(),
-                    g_vecMysqlConnections.end(),
-                    this),
-        g_vecMysqlConnections.end()
-    );
-
+    g_vecMysqlConnections.erase(std::remove(g_vecMysqlConnections.begin(), g_vecMysqlConnections.end(), this), g_vecMysqlConnections.end());
     delete this;
 }
 
 void MySQLConnection::RunFrame()
 {
-    std::shared_ptr<ThreadOperation> op;
+    if (!m_ThinkQueue.size())
+    {
+        return;
+    }
 
+    ThreadOperation *op;
     {
         std::lock_guard<std::mutex> lock(m_ThinkLock);
-
-        if (m_ThinkQueue.empty())
-            return;
-
-        op = std::move(m_ThinkQueue.front());
+        op = m_ThinkQueue.front();
         m_ThinkQueue.pop();
     }
 
     op->RunThinkPart();
+    delete op;
 }
 
 void MySQLConnection::ThreadRun()
 {
     if (mysql_thread_safe())
+    {
         mysql_thread_init();
+    }
 
     std::unique_lock<std::mutex> lock(m_Lock);
 
@@ -158,13 +154,15 @@ void MySQLConnection::ThreadRun()
         if (m_threadQueue.empty())
         {
             if (m_Terminate)
-                break;
+            {
+                return;
+            }
 
             m_QueueEvent.wait(lock);
             continue;
         }
 
-        auto op = std::move(m_threadQueue.front());
+        ThreadOperation *op = m_threadQueue.front();
         m_threadQueue.pop();
 
         lock.unlock();
@@ -181,78 +179,18 @@ void MySQLConnection::ThreadRun()
     mysql_thread_end();
 }
 
-void MySQLConnection::AddToThreadQueue(ThreadOperation* threadOperation)
+void MySQLConnection::AddToThreadQueue(ThreadOperation *threadOperation)
 {
     if (!m_thread)
-        m_thread = std::make_unique<std::thread>(&MySQLConnection::ThreadRun, this);
+    {
+        m_thread = std::unique_ptr<std::thread>(new std::thread(&MySQLConnection::ThreadRun, this));
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_Lock);
-
-        m_threadQueue.push(std::shared_ptr<ThreadOperation>(threadOperation));
+        m_threadQueue.push(threadOperation);
         m_QueueEvent.notify_one();
     }
-}
-
-MYSQL* MySQLConnection::GetDatabase()
-{
-    std::lock_guard<std::mutex> lock(m_DbLock);
-    return m_pDatabase;
-}
-
-bool MySQLConnection::ReconnectSync()
-{
-    std::lock_guard<std::mutex> lock(m_DbLock);
-
-    if (m_pDatabase)
-    {
-        mysql_close(m_pDatabase);
-        m_pDatabase = nullptr;
-    }
-
-    MYSQL* mysql = mysql_init(nullptr);
-    if (!mysql)
-        return false;
-
-    const char* host = nullptr;
-    const char* socket = nullptr;
-
-    int timeout = 60;
-    mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, (const char*)&timeout);
-    mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, (const char*)&timeout);
-    mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, (const char*)&timeout);
-
-    bool my_true = true;
-    mysql_options(mysql, MYSQL_OPT_RECONNECT, (const char*)&my_true); // deprecated
-
-    if (m_info.host[0] == '/')
-    {
-        host = "localhost";
-        socket = m_info.host;
-    }
-    else
-    {
-        host = m_info.host;
-        socket = nullptr;
-    }
-
-    if (!mysql_real_connect(mysql,
-        host,
-        m_info.user,
-        m_info.pass,
-        m_info.database,
-        m_info.port,
-        socket,
-        (1 << 17)))
-    {
-        mysql_close(mysql);
-        return false;
-    }
-
-    m_pDatabase = mysql;
-    ConMsg("MySQL reconnected to %s\n", m_info.host);
-
-    return true;
 }
 
 unsigned int MySQLConnection::GetInsertID()
@@ -265,15 +203,15 @@ unsigned int MySQLConnection::GetAffectedRows()
     return mysql_affected_rows(m_pDatabase);
 }
 
-std::string MySQLConnection::Escape(const char* string)
+std::string MySQLConnection::Escape(const char *string)
 {
-    return Escape(const_cast<char*>(string));
+    return Escape(const_cast<char *>(string));
 }
 
-std::string MySQLConnection::Escape(char* string)
+std::string MySQLConnection::Escape(char *string)
 {
     size_t size = strlen(string);
-    char* buffer = new char[size * 2 + 1];
+    char *buffer = new char[size * 2 + 1];
 
     mysql_real_escape_string(m_pDatabase, buffer, string, size);
 

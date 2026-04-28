@@ -23,55 +23,57 @@
 #include <WinSock2.h>
 #include <mysql.h>
 #else
-#include <mysql.h>
+#include <mysql/mysql.h>
 #endif
 
 #include <queue>
 #include <thread>
 #include <condition_variable>
 #include <functional>
+#include "common/database.h"
 #include "public/mysql_mm.h"
-
-class ThreadOperation
-{
-public:
-    virtual void RunThreadPart() = 0;
-    virtual void CancelThinkPart() = 0;
-    virtual void RunThinkPart() = 0;
-private:
-};
-
 
 class MySQLConnection : public IMySQLConnection
 {
 public:
     MySQLConnection(const MySQLConnectionInfo info);
     ~MySQLConnection();
-	void Connect(ConnectCallbackFunc callback);
-    void Query(char* query, QueryCallbackFunc callback);
-    void Query(const char* query, QueryCallbackFunc callback, ...);
+    void Connect(ConnectCallbackFunc callback);
+    void Query(char *query, QueryCallbackFunc callback);
+    void Query(const char *query, QueryCallbackFunc callback, ...);
+
+    void ExecuteTransaction(Transaction txn, TransactionSuccessCallbackFunc success, TransactionFailureCallbackFunc failure);
+
     void Destroy();
-	void RunFrame();
-    void SetDatabase(MYSQL* db) { m_pDatabase = db; }
-    MYSQL* GetDatabase();
-    bool ReconnectSync();
+    void RunFrame();
+
+    void SetDatabase(MYSQL *db)
+    {
+        m_pDatabase = db;
+    }
+
+    MYSQL *GetDatabase()
+    {
+        return m_pDatabase;
+    }
+
     unsigned int GetInsertID();
     unsigned int GetAffectedRows();
-    std::string Escape(char* string);
-    std::string Escape(const char* string);
+    std::string Escape(char *string);
+    std::string Escape(const char *string);
 
     MySQLConnectionInfo m_info;
-    std::mutex m_DbLock;
+
 private:
     void ThreadRun();
-    void AddToThreadQueue(ThreadOperation* threadOperation);
+    void AddToThreadQueue(ThreadOperation *threadOperation);
 
-    std::queue<std::shared_ptr<ThreadOperation>> m_threadQueue;
-    std::queue<std::shared_ptr<ThreadOperation>> m_ThinkQueue;
+    std::queue<ThreadOperation *> m_threadQueue;
+    std::queue<ThreadOperation *> m_ThinkQueue;
     std::unique_ptr<std::thread> m_thread;
     std::condition_variable m_QueueEvent;
     std::mutex m_Lock;
-	std::mutex m_ThinkLock;
+    std::mutex m_ThinkLock;
     bool m_Terminate = false;
-    MYSQL* m_pDatabase = nullptr;
+    MYSQL *m_pDatabase = nullptr;
 };

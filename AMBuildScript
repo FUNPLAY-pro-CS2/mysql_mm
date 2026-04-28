@@ -85,12 +85,12 @@ class MMSPluginConfig(object):
     if builder.options.plugin_alias is not None:
       self.plugin_alias = builder.options.plugin_alias
     else:
-      self.plugin_alias = 'mysql'
+      self.plugin_alias = 'mysql_mm'
 
     if builder.options.targets:
       target_archs = builder.options.targets.split(',')
     else:
-      target_archs = ['x86', 'x86_64']
+      target_archs = ['x86_64']
 
     for arch in target_archs:
         try:
@@ -156,7 +156,7 @@ class MMSPluginConfig(object):
         '-fPIC',
       ]
 
-      cxx.cxxflags += ['-std=c++20']
+      cxx.cxxflags += ['-std=c++17']
       if (cxx.version >= 'gcc-4.0') or cxx.family == 'clang':
         cxx.cflags += ['-fvisibility=hidden']
         cxx.cxxflags += ['-fvisibility-inlines-hidden']

@@ -24,7 +24,7 @@
 #include <functional>
 #include <string>
 
-#define MYSQLMM_INTERFACE "IMySQLClient"
+#define MYMYSQLMM_INTERFACE "IMySQLClient"
 
 class IMySQLQuery;
 

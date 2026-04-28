@@ -19,28 +19,45 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
-#include "../database.h"
+#include "mysql_query.h"
+#include "tier0/dbg.h"
 #include "../mysql_result.h"
 
-class TQueryOp : public ThreadOperation
+TMySQLQueryOp::~TMySQLQueryOp()
 {
-public:
-	TQueryOp(MySQLConnection* con, std::string query, QueryCallbackFunc func) : m_pCon(con), m_szQuery(query), m_callback(func)
-	{
+    delete m_pQuery;
+}
 
-	}
+void TMySQLQueryOp::RunThreadPart()
+{
+    auto pDatabase = m_pCon->GetDatabase();
+    m_szError[0] = '\0';
+    if (mysql_query(pDatabase, m_szQuery.c_str()))
+    {
+        V_snprintf(m_szError, sizeof m_szError, "MySQL query error: %s\n", mysql_error(pDatabase));
+        return;
+    }
 
-	~TQueryOp();
+    if (mysql_field_count(pDatabase))
+    {
+        m_res = mysql_store_result(pDatabase);
+    }
+}
 
-	void RunThreadPart();
-	void CancelThinkPart();
-	void RunThinkPart();
-private:
-	MySQLConnection* m_pCon;
-	std::string m_szQuery;
-	QueryCallbackFunc m_callback;
-	MYSQL_RES* m_res = nullptr;
-	CMySQLQuery* m_pQuery = nullptr;
-	char m_szError[255];
-};
+void TMySQLQueryOp::RunThinkPart()
+{
+    if (m_szError[0])
+    {
+        ConMsg("%s\n", m_szError);
+        return;
+    }
+
+    m_pQuery = new CMySQLQuery(m_pCon, m_res);
+    m_callback(m_pQuery);
+}
+
+void TMySQLQueryOp::CancelThinkPart()
+{
+    mysql_close(m_pCon->GetDatabase());
+    m_pCon->SetDatabase(nullptr);
+}
